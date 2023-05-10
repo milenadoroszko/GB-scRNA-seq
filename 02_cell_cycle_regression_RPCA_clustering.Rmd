@@ -1,0 +1,1297 @@
+---
+title: "MOnocle3"
+author: "Milena Doroszko"
+date: "20/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/")
+memory.limit(1048576)
+if (!requireNamespace("monocle3", quietly = TRUE)) {
+  setRepositories(ind = 1:2)
+  remotes::install_github(
+    repo = "cole-trapnell-lab/monocle3",
+    upgrade = FALSE
+  )
+}
+library(BiocManager)
+library(remotes)
+library(devtools)
+library(monocle3)
+library(Seurat)
+library(SeuratData)
+library(SeuratWrappers)
+library(ggplot2)
+library(patchwork)
+library(magrittr)
+library(cowplot)
+library(clustree)
+library(dittoSeq)
+library(colorspace)
+plan("multisession", workers = 1)
+options(future.globals.maxSize= 16000*1024^2)
+```
+
+```{r, fig.height= 4, fig.width=7}
+brain<-readRDS(file="D:/Dropbox (UU)/SSF2_single_cell/comp/Output/Harmony_brain_June_2022/brain_plastic_qc.rds")
+
+head( brain@meta.data)
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+RidgePlot(brain, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
+brain <- NormalizeData(brain)
+brain <- FindVariableFeatures(brain, selection.method = "vst")
+brain <- ScaleData(brain, features = rownames(brain))
+brain <- RunPCA(brain, features = c(s.genes, g2m.genes), nfeatures.print = 10)
+#see if they separate by CC
+b<-DimPlot(brain)+ ggtitle("with cell cycle")
+b
+#regress CC
+brain_cc_reg <- ScaleData(brain, vars.to.regress = c("S.Score", "G2M.Score"), features = rownames(brain))
+
+#check if CC has been removed
+brain_cc_reg <- RunPCA(brain_cc_reg, features = c(s.genes, g2m.genes), nfeatures.print = 10)
+a<-DimPlot(brain_cc_reg)
+
+plot_grid(b,a)+ ggtitle("Cell cycle regression before (left) and after (right)")
+#RunUMAP on unintegrated samples
+
+brain_cc_reg<-(brain_cc_reg, dims = 1:30, reduction.name = "umap")
+
+brain_cc_reg <- FindNeighbors(brain_cc_reg, reduction = "umap",dims = 1:2, k.param = 60, prune.SNN = 1/15)
+saveRDS(brain_cc_reg, file= "brain_plastic_qc_noCC.rds")
+#brain<-readRDS(file= "brain_plastic_qc_noCC.rds")
+```
+RPCA integration
+```{r}
+brain <- SplitObject(brain, split.by = "orig.ident")
+for (i in seq_along(brain)) {
+  brain[[i]] <- NormalizeData(brain[[i]]) %>% FindVariableFeatures()
+}
+features <- SelectIntegrationFeatures(brain, nfeatures = 3000)
+for (i in seq_along(along.with = brain)) {
+  brain[[i]] <- ScaleData(brain[[i]], features = features, verbose = F) %>%
+    RunPCA(features = features , nfeatures.print = 10)
+}
+head(brain)
+```
+
+```{r, fig.width=16}
+
+#what to start anchoring from (1= 3013S6, 4=3180S8, 14=3054S2)
+anchors <- FindIntegrationAnchors(
+  brain,
+  reference=c(1,2),
+  reduction = "rpca",
+  dims = 1:30, verbose=F
+)
+integrated <- IntegrateData(anchors, dims = 1:30, verbose=F)
+integrated <- ScaleData(integrated, features=rownames(integrated),verbose=F)
+integrated <- RunPCA(integrated)
+integrated <- RunUMAP(integrated, dims = 1:30, reduction.name = "umap")
+integrated <- FindNeighbors(integrated, reduction = "umap",dims = 1:2, k.param = 60, prune.SNN = 1/15)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",resolution = .01 , algorithm = 2)
+
+print(names(integrated@reductions))
+names(integrated@graphs)
+plot_grid(ncol=2,
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.01")+ggtitle("louvain_0.01"),
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "growth")+ggtitle("Growth"),
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "Phase")+ggtitle("CellCyclePhase"),
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "type")+ggtitle("Type"))
+```
+Look at the data before and after integration
+```{r,fig.width=16, fig.height=16}
+alldata.int<-brain_cc_reg
+plot_grid(ncol = 2, 
+          DimPlot(alldata.int, group.by = c("Patient"), label=TRUE,label.size = 12,repel = T, cols= hcl.colors(7, "Zissou 1", rev=T), pt.size=0.1)+ theme(legend.text=element_text(size=40)),
+  DimPlot(integrated, group.by = c("Patient"), label=TRUE,label.size = 12,repel = T, cols= hcl.colors(7, "Zissou 1", rev=T), pt.size=0.1)+ theme(legend.text=element_text(size=40)),
+  
+   DimPlot(alldata.int, group.by = c("type"), repel = T, cols= hcl.colors(3, "cividis", rev=T), pt.size=0.1)+ theme(legend.text=element_text(size=30)),
+  DimPlot(integrated, group.by = c("type"), cols= hcl.colors(3, "cividis", rev=T), pt.size=0.1)+ theme(legend.text=element_text(size=40)),
+  DimPlot(alldata.int, group.by = c("Chemistry"),repel = T, cols= hcl.colors(2, "cividis"), pt.size=0.1)+ theme(legend.text=element_text(size=40)),
+   DimPlot(integrated, group.by = c("Chemistry"), cols= hcl.colors(2, "cividis"), pt.size=0.1)+ theme(legend.text=element_text(size=40)),
+    DimPlot(alldata.int, group.by = c("Phase"), label=TRUE,label.size = 12,repel = T, cols= hcl.colors(4, "cividis", rev=T), pt.size=0.1)+ theme(legend.text=element_text(size=40)),
+  DimPlot(integrated, group.by = c("Phase"), label=TRUE,label.size = 12,repel = T, cols= hcl.colors(4, "cividis", rev=T), pt.size=0.1)+ theme(legend.text=element_text(size=40)))
+
+```
+
+```{r,results='hide',block.title=TRUE,fig.height=16,fig.width=16}
+
+
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .03 , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .1 , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .2 , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .3 , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .4 , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .5  , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = .7 , algorithm = 2)
+integrated <- FindClusters(integrated, graph.name = "integrated_snn",method="igraph", resolution = 1  , algorithm = 2)
+
+plot_grid(ncol = 3,
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.03")+ggtitle("louvain_0.03"),
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.1")+ggtitle("louvain_0.1"),
+          DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.2")+ggtitle("louvain_0.2"),
+  DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.3")+ggtitle("louvain_0.3"),
+   DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.4")+ggtitle("louvain_0.4"),
+  DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.5")+ggtitle("louvain_0.5"),
+  DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.0.7")+ggtitle("louvain_0.7"),
+  DimPlot(integrated, reduction = "umap", label = T, group.by = "integrated_snn_res.1")+ggtitle("louvain_1.0"),
+  DimPlot(integrated, reduction = "umap", label = T, group.by = "Phase")+ggtitle("Cell_cycle"),
+  DimPlot(integrated, reduction = "umap", label = T, group.by = "growth")+ggtitle("growth_pattern"))
+  
+ plot_grid(ncol = 1,
+  DimPlot(integrated, cols = hcl.colors(30, "broc"), reduction = "umap", label = T, group.by = "integrated_snn_res.0.5", split.by = "Patient")+ggtitle("Resolution_0.7_by_Patient"),
+  DimPlot(integrated, cols = hcl.colors(50, "broc"), reduction = "umap", label = T, group.by = "integrated_snn_res.1", split.by = "Patient")+ggtitle("Resolution_1.0_by_Patient")
+)
+clustree(integrated, prefix = "integrated_snn_res.")
+head(integrated)
+saveRDS(integrated, "brain_plastic_noCC_PRPCA3k_29042023_clustered_publ.rds")
+```
+
+```{r, fig.width=16}
+integrated<- readRDS(file="D:/Dropbox (UU)/SSF2_single_cell/comp/Output/Monocle3_brain_June_2022/brain_noCC_PRPCA2k_25042023_clustered_publ.rds")
+
+```
+
+
+```{r, fig.width=16}
+plot_grid(ncol = 3,
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.01"), label=TRUE, cols= hcl.colors(8, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.03"), label=TRUE, cols= hcl.colors(11, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.1"), label=TRUE, cols= hcl.colors(17, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.2"), label=TRUE, cols= hcl.colors(21, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.3"), label=TRUE, cols= hcl.colors(25, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.4"), label=TRUE, cols= hcl.colors(30, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.5"), label=TRUE, cols= hcl.colors(35, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  
+   #DimPlot(integrated, group.by = c("Patient"), label=TRUE, cols= hcl.colors(6, "Zissou 1"), pt.size=2)+ NoLegend(),
+  DimPlot(integrated, group.by = c("growth"), label=TRUE, cols= hcl.colors(3, "Zissou 1"), pt.size=1)+ NoLegend(),
+  DimPlot(integrated, group.by = c("Phase"), label=TRUE, cols= hcl.colors(3, "cividis"), pt.size=1)+ NoLegend()
+)
+
+```
+
+
+```{r}
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.01")
+markers_genes01 <- FindAllMarkers(integrated,logfc.threshold = 0.2, min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA", verbose = T, check_sanity = FALSE)
+write.table(x=markers_genes01, file="brain_plastic_RPCA3k_noCC_29042023_markers_res0.01.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.03")
+markers_genes03 <- FindAllMarkers(integrated,logfc.threshold = 0.2, min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA", verbose = T, check_sanity = FALSE)
+write.table(x=markers_genes03, file="brain_plastic_RPCA3k_noCC_29042023_markers_res0.03.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.2")
+markers_genes2 <- FindAllMarkers(integrated,logfc.threshold = 0.2, min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA", verbose = F, check_sanity = FALSE)
+write.table(x=markers_genes2, file="brain_plastic_RPCA3k_noCC_29042023_markers_res0.2.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.5")
+markers_genes5 <- FindAllMarkers(integrated, logfc.threshold = 0.2,min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA",verbose = F,check_sanity = FALSE)
+
+write.table(x=markers_genes5, file="brain_plastic_RPCA3k_noCC_29042023_markers_res05.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.4")
+markers_genes4 <- FindAllMarkers(integrated, logfc.threshold = 0.2,min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA",verbose = F,check_sanity = FALSE)
+
+write.table(x=markers_genes4, file="brain_plastic_RPCA3k_noCC_29042023_markers_res04.txt", quote = FALSE)
+```
+
+integrated.sub <- SetIdent(integrated, value = "integrated_snn_res.1")
+markers_genes2<-FindAllMarkers(integrated.sub,
+                               logfc.threshold = 0.2,
+                               min.pct = 0.1,
+                               min.diff.pct = 0.2,
+                               only.pos = TRUE,
+                               max.cells.per.ident =1000,
+                               assay = "RNA",
+                               verbose = FALSE,
+                             check_sanity = FALSE)
+
+write.table(x=markers_genes2, file="monocleRPCS_brain_res1_4kanchors03102022.txt", quote = FALSE)
+```{r}
+dittoBarPlot(integrated, "integrated_snn_res.0.03", group.by = "type")
+dittoBarPlot(integrated, "type", group.by = "integrated_snn_res.0.03")
+dittoBarPlot(integrated, "integrated_snn_res.0.01", group.by = "growth")
+dittoBarPlot(integrated, "growth", group.by = "integrated_snn_res.0.01")
+
+#dittoBarPlot(integrated.sub, "seurat_clusters by Patient")
+#dittoBarPlot(integrated.sub, "seurat_clusters by cluster", group.by= "integrated_snn_res.0.1")
+```
+```{r}
+integrated$assigned_cell_type<- integrated$integrated_snn_res.0.2
+
+integrated$assigned_cell_type <- dplyr::recode(integrated$assigned_cell_type,
+                                                  "0"= "0-Oligo",
+                                               "1"= "1-Astrocyte/Radial.glia/Microglia",
+                                               "2"= "2-Neuron", "3"= "3-G1/S-Phase",
+                                               "4"="4-Radial.glia/MES1",
+                                               "5"="5-G1.S",
+                                               "6"="6-Astrocyte/NPC2",
+                                         "7"="7-MES1/Macrophage, Endothelial.cell",
+                                         "8"="8-G2/M",
+                                         "9"="9-G2/M",
+                                         "10"="10-Oligo/Mast.cell",
+                                         "11"="11-Astrocyte/Radial.glia/OPC/GSC", 
+                                         "12"="12-MES2/Macrophage", 
+                                         "13"="13-MES1/MES2/Macrophage", 
+                                         "14"="14-MES2", 
+                                         "15"="15-Pericvascular.fib", 
+                                         "16"="16-Astrocyte/Radial.glia/OPC/GSC", 
+                                         "17"="17-Fibroblasts", 
+                                         "18"="18-Fibroblasts/Smooth.muscle.cell", 
+                                         "19"="19-Meningeal.cell/Perivascular.fib", 
+                                         "20"="20-Smooth.muscle.cell/Mural.cell", 
+                                         "21"="21-Smooth.muscle.cell/Fibroblast")
+
+dittoBarPlot(integrated, "assigned_cell_type", group.by = "Patient")
+dittoBarPlot(integrated, "Patient", group.by = "assigned_cell_type")
+dittoBarPlot(integrated, "type", group.by = "assigned_cell_type")
+dittoBarPlot(integrated, "assigned_cell_type", group.by = "type")
+
+```
+
+
+```{r, fig.width=16, fig.height=24}
+library(dplyr)
+markers_genes2 %>% group_by(cluster)  %>% top_n(5, pct.1)-> top20
+markers_genes2 %>% group_by(cluster)  %>% top_n(5, p_val_adj)-> top30
+markers_genes2 %>% group_by(cluster)  %>% top_n(5, avg_log2FC)-> top10
+scld<-ScaleData(integrated, assay= "RNA")
+DotPlot(scld, features = as.character(unique(top20$gene)), group.by = "integrated_snn_res.0.2",assay = "RNA", cols= hcl.colors(2, "Zissou 1")) +coord_flip()
+DotPlot(scld, features = as.character(unique(top30$gene)),group.by = "integrated_snn_res.0.2",assay = "RNA", cols= hcl.colors(2, "Zissou 1")) +coord_flip()
+DotPlot(scld, features = as.character(unique(top10$gene)),group.by = "integrated_snn_res.0.2",assay = "RNA", cols= hcl.colors(2, "Zissou 1")) +coord_flip()
+dittoHeatmap(object=scld, genes = as.character(unique(top20$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  annot.by = "integrated_snn_res.0.01",
+  order.by = "integrated_snn_res.0.01",
+  assay="RNA",
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"))
+
+```
+
+```{r, fig.height=24}
+DoHeatmap(scld, features = as.character(unique(top20$gene)) ,group.by = "integrated_snn_res.0.03", assay = "RNA", slot = "scale.data", group.colors = hcl.colors(22, "Zissou 1"))+ scale_fill_gradientn(colors = hcl.colors(5, "Zissou 1")) 
+DoHeatmap(scld, features = as.character(unique(top30$gene)) ,group.by = "integrated_snn_res.0.03", assay = "RNA", slot = "scale.data", group.colors = hcl.colors(22, "Zissou 1"))+ scale_fill_gradientn(colors = hcl.colors(5, "Zissou 1")) 
+DoHeatmap(scld, features = as.character(unique(top10$gene)) ,group.by = "integrated_snn_res.0.03", assay = "RNA", slot = "scale.data", group.colors = hcl.colors(22, "Zissou 1"))+ scale_fill_gradientn(colors = hcl.colors(5, "Zissou 1")) 
+
+```
+
+
+```{r, fig.width=16}
+dittoHeatmap(object=scld, genes = as.character(unique(top20$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  annot.by = "integrated_snn_res.0.03",
+  order.by = "integrated_snn_res.0.03",
+  assay="RNA",
+  highlight.features=c("ANXA1", "TCF4","MEF2C", "RFX4", "IFI16", "HOPX", "MITF",          "CAV1", "AQP4", "OLIG2", "GFAP", "CD44", "ZEB1", "ZEB2", "EGFR", "ERBB3", "GAP43"), 
+  annot.colors = hcl.colors(29, "Zissou 1"),
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"))
+dittoHeatmap(object=scld, genes = as.character(unique(top30$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  annot.by = "integrated_snn_res.0.03",
+  order.by = "integrated_snn_res.0.03",
+  assay="RNA",
+  highlight.features=c("ANXA1", "TCF4","MEF2C", "RFX4", "IFI16", "HOPX", "MITF",          "CAV1", "AQP4", "OLIG2", "GFAP", "CD44", "ZEB1", "ZEB2", "EGFR", "ERBB3", "GAP43"), 
+  annot.colors = hcl.colors(29, "Zissou 1"),
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"))
+dittoHeatmap(object=scld, genes = as.character(unique(top10$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  annot.by = "integrated_snn_res.0.03",
+  order.by = "integrated_snn_res.0.03",
+  assay="RNA",
+  highlight.features=c("ANXA1", "TCF4","MEF2C", "RFX4", "IFI16", "HOPX", "MITF",          "CAV1", "AQP4", "OLIG2", "GFAP", "CD44", "ZEB1", "ZEB2", "EGFR", "ERBB3", "GAP43"), 
+  annot.colors = hcl.colors(29, "Zissou 1"),
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"),
+  complex=TRUE)
+```
+
+```{r,fig.height=24, fig.width=16}
+dittoHeatmap(scld, genes = as.character(unique(top20$gene)),
+             assay = "RNA", order.by = c("integrated_snn_res.0.3"),
+             cluster_cols = FALSE,  scaled.to.max = TRUE,
+             heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"),
+             complex=TRUE,
+            annot.by = c("integrated_snn_res.0.5","Patient","growth", "Phase", "integrated_snn_res.0.4")
+             #,annotation_colors = list(indication = metadata(spe)$color_vectors$indication,
+              #                        patient_id = metadata(spe)$color_vectors$patient_id,
+               #                       celltype = metadata(spe)$color_vectors$celltype)
+             )
+
+```
+
+```{r}
+ratio<- (integrated$nFeature_RNA/integrated$nCount_RNA)
+integrated<-AddMetaData(integrated, metadata= ratio, col.name = "expr")
+head(integrated)
+VlnPlot(integrated, features = "nFeature_RNA")
+VlnPlot(integrated, features = "nCount_RNA")
+
+VlnPlot(integrated, features = "expr", group.by = "integrated_snn_res.0.2")
+VlnPlot(integrated, features = "percent_mito", group.by = "integrated_snn_res.0.2")
+VlnPlot(integrated, features = "percent_ribo", group.by = "integrated_snn_res.0.2")
+FeaturePlot(integrated, features= "expr")
+FeaturePlot(integrated, features= "nFeature_RNA")
+FeaturePlot(integrated, features= "nCount_RNA")
+FeaturePlot(integrated, features= "percent_mito")
+FeaturePlot(integrated, features= "percent_ribo")
+
+
+```
+
+```{r, fig.width=7, fig.height=7}
+#change default seurat_clusters to the most optimal resolution which in theis case is 0.2
+integrated@meta.data$seurat_clusters<-integrated@meta.data$integrated_snn_res.0.2
+library(ggalluvial)
+library(ggforce)
+
+head(integrated)
+custom_colors <- list()
+
+colors_dutch <- c(
+  '#FFC312','#C4E538','#12CBC4','#FDA7DF','#ED4C67',
+  '#F79F1F','#A3CB38','#1289A7','#D980FA','#B53471',
+  '#EE5A24','#009432','#0652DD','#9980FA','#833471',
+  '#EA2027','#006266','#1B1464','#5758BB','#6F1E51'
+)
+rev_dutch<-rev(colors_dutch)
+rev_dutch
+azi_col<-c("#5758BB", "#EA2027","#34e7e4", "#0be881", "#ffd32a", "#833471")
+azi_col2<-c("#34ace0", "#ED4C67", "#9980FA", "#A3CB38", "#F79F1F", "#006266")
+
+colors_spanish <- c(
+  '#40407a','#706fd3','#f7f1e3','#34ace0','#33d9b2',
+  '#2c2c54','#474787','#aaa69d','#227093','#218c74',
+  '#ff5252','#ff793f','#d1ccc0','#ffb142','#ffda79',
+  '#b33939','#cd6133','#84817a','#cc8e35','#ccae62'
+)
+
+custom_colors$discrete <- c(colors_dutch, colors_spanish)
+custom_colors
+#imp@meta.data$seurat_clusters<-imp@meta.data$integrated_snn_res.0.4
+clusters <- levels(integrated@meta.data$seurat_clusters)
+cell_types <- sort(unique(integrated@meta.data$type))
+samples <- sort(unique(integrated@meta.data$Patient))
+assigned_types <- levels(integrated@meta.data$assigned_cell_type)
+growths <- sort(unique(integrated@meta.data$growth))
+resols <- levels(integrated@meta.data$integrated_snn_res.0.2)
+```
+
+```{r, fig.width=8, fig.height=6}
+#growth x clusters
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(growths)], custom_colors$discrete[1:length(clusters)]),
+  c(growths,clusters)
+)
+data <- integrated@meta.data %>%
+  group_by(seurat_clusters,growth) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = unique(y))
+  )
+DataFrame(data)
+data_labels <- tibble(
+    group = c(
+      rep('growth', length(growths)),
+      rep('seurat_clusters', length(clusters))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'growth', 1, 0),
+    nudge_x = ifelse(group == 'growth', -0.1, 0.1)
+  )
+DataFrame(data_labels)
+p5<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = growth), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('growth','Cluster')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p5
+
+#samples x clusters
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(samples)], custom_colors$discrete[1:length(clusters)]),
+  c(samples,clusters)
+)
+data <- integrated@meta.data %>%
+  group_by(Patient,seurat_clusters) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = unique(y))
+  )
+DataFrame(data)
+data_labels <- tibble(
+    group = c(
+      rep('Patient', length(samples)),
+      rep('seurat_clusters', length(clusters))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'Patient', 1, 0),
+    nudge_x = ifelse(group == 'Patient', -0.1, 0.1)
+  )
+DataFrame(data_labels)
+p1<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = Patient), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('Patient','Cluster')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p1
+#samples xclusters/assigned.cell.type
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(samples)], custom_colors$discrete[1:length(assigned_types)]),
+  c(samples,assigned_types)
+)
+
+data <- integrated@meta.data %>%
+  dplyr::rename(assigned_type = assigned_cell_type) %>%
+  dplyr::mutate(assigned_type = factor(assigned_type, levels = assigned_types)) %>%
+  group_by(Patient, assigned_type) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = c(samples,assigned_types))
+  )
+data
+data_labels <- tibble(
+    group = c(
+      rep('Patients', length(samples)),
+      rep('assigned_type', length(assigned_types))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'Patient', 1, 0),
+    nudge_x = ifelse(group == 'Patient', -0.1, 0.1)
+  )
+data_labels
+p4<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = Patient), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('Patient','Cell type')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p4
+
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(cell_types)], custom_colors$discrete[1:length(assigned_types)]),
+  c(cell_types,assigned_types)
+)
+
+data <- integrated@meta.data %>%
+  dplyr::rename(assigned_type = assigned_cell_type) %>%
+  dplyr::mutate(assigned_type = factor(assigned_type, levels = assigned_types)) %>%
+  group_by(assigned_type,type ) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = c(assigned_types,cell_types))
+  )
+data
+data_labels <- tibble(
+    group = c(
+      rep('type', length(assigned_types)),
+      rep('assigned_type', length(cell_types))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'type', 1, 0),
+    nudge_x = ifelse(group == 'type', -0.1, 0.1)
+  )
+data_labels
+p7<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = type), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('Cell type','type')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p7
+p1
+p1+p7
+ggsave(
+  'plots/brain_plastic_res02clusters_cell_types_alluvialp2p4.png',
+  p4 + p2 + plot_layout(ncol = 2),
+  height = 6, width = 8
+)
+```
+```{r}
+library(ggforce)
+library(tidyverse)
+library(dplyr)
+## get sample and cluster names
+samples <- levels(integrated@meta.data$orig.ident)
+clusters <- levels(integrated@meta.data$integrated_snn_res.0.2)
+
+## create named vector holding the color assignments for both samples and
+## clusters
+custom_colors <- list()
+
+colors_dutch <- c(
+  '#FFC312','#C4E538','#12CBC4','#FDA7DF','#ED4C67',
+  '#F79F1F','#A3CB38','#1289A7','#D980FA','#B53471',
+  '#EE5A24','#009432','#0652DD','#9980FA','#833471',
+  '#EA2027','#006266','#1B1464','#5758BB','#6F1E51'
+)
+
+colors_spanish <- c(
+  '#40407a','#706fd3','#f7f1e3','#34ace0','#33d9b2',
+  '#2c2c54','#474787','#aaa69d','#227093','#218c74',
+  '#ff5252','#ff793f','#d1ccc0','#ffb142','#ffda79',
+  '#b33939','#cd6133','#84817a','#cc8e35','#ccae62'
+)
+
+custom_colors$discrete <- c(colors_dutch, colors_spanish)
+
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(samples)], custom_colors$discrete[1:length(clusters)]),
+  c(samples,clusters)
+)
+
+## prepare data for the plot; factor() calls are necessary for the right order
+## of columns (first samples then clusters) and boxes within each column (
+## cluster 1, 2, 3, ..., not 1, 10, 11, ...)
+data <- integrated@meta.data %>%
+  group_by(orig.ident,int_snn_res.0.5) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = unique(y))
+  )
+
+DataFrame(data)
+data_labels <- data%>%tibble::tibble(
+    group = c(
+      rep('orig.ident', length(samples)),
+      rep('int_snn_res.0.5', length(clusters))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'orig.ident', 1, 0),
+    nudge_x = ifelse(group == 'orig.ident', -0.1, 0.1)
+  )
+
+DataFrame(data_labels)
+p1 <- ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = int_snn_res.0.5), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = 1, nudge_x = -0.1
+  ) +
+  scale_x_discrete(labels = c('Sample','Cluster')) +
+  scale_fill_brewer(type = "qual", palette = "Set1")+
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p1
+
+```
+
+
+```{r, fig.width=16, fig.asp=0.58}
+cds <- as.cell_data_set(integrated)
+cds <- cluster_cells(cds, k = 21)
+p1 <- plot_cells(cds, label_groups_by_cluster = TRUE, group_label_size = 8, show_trajectory_graph = F,)
+p2 <- plot_cells(cds, color_cells_by = "partition", show_trajectory_graph = FALSE)
+wrap_plots(p1, p2)
+gc(verbose = FALSE)
+
+integrated.sub <- subset(as.Seurat(cds, assay = NULL), monocle3_partitions == 1)
+cds1 <- as.cell_data_set(integrated.sub)
+cds1 <- learn_graph(cds1, use_partition = F)
+p3<-plot_cells(cds1, color_cells_by = "Patient", label_groups_by_cluster = TRUE, group_label_size = 8, labels_per_group = 1, label_roots= T,
+  label_leaves = F, label_branch_points = F)
+p4<-plot_cells( cds1,color_cells_by = "cluster", label_groups_by_cluster = TRUE, group_label_size = 8,labels_per_group = 1, label_roots= F,
+  label_leaves = T, label_branch_points = F)
+p5<-plot_cells( cds1,color_cells_by = "Patient", label_groups_by_cluster = TRUE, group_label_size = 8,labels_per_group = 1, label_roots= F,
+  label_leaves = F, label_branch_points = T)
+wrap_plots(p3, p4, p5)
+gc(verbose = FALSE)
+```
+
+
+
+```{r, fig.width=16}
+#Now, set up whick cells your trajectory should start from. You can either specify a gene or a group of cells, e.g. cluster 
+AVP<- c( "NES", "EZH2","SOX9","OLIG2", "OLIG1")
+#FeaturePlot(integrated.sub, features= AVP)
+
+VlnPlot(integrated.sub, features = AVP)
+max.avp <- which.max(unlist(FetchData(integrated.sub, AVP)))
+max.avp <- colnames(integrated.sub)[max.avp] #then root_cells = max.avp
+#levels(integrated.sub)
+cds3 <- order_cells(cds1, reduction_method = "UMAP", root_cells = max.avp)
+cds2 <- order_cells(cds1, reduction_method = "UMAP", root_cells = colnames(cds1[,clusters(cds1) == c(1,18)]))
+#IF ROOT THROUGH THE STATE/CLUSTER
+#cluster2.cells <- WhichCells(object = integrated.sub, idents = 2)
+#cds <- order_cells(cds, root_cells = NULL)
+```
+
+
+```{r, fig.width=16}
+plot_grid(ncol=2,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.2",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    #trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T) + scale_color_discrete_divergingx(palette = "Zissou 1"),
+  #scale_color_discrete_qualitative(15,palette = "Harmonic"),
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    #trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_divergingx(palette = "Zissou 1"),
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.2",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    #trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_divergingx(palette = "Zissou 1")
+
+  
+)
+
+plot_grid(ncol=2,
+  plot_cells(
+    cds3,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds3,
+    color_cells_by = "integrated_snn_res.0.2",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    #trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T) + scale_color_discrete_divergingx(palette = "Zissou 1"),
+  #scale_color_discrete_qualitative(15,palette = "Harmonic"),
+  
+  plot_cells(
+    cds3,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    #trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_divergingx(palette = "Zissou 1"),
+  plot_cells(
+    cds3,
+    color_cells_by = "integrated_snn_res.0.5",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    #trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 2,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_divergingx(palette = "Zissou 1")
+
+  
+)
+
+```
+
+
+
+```{r, fig.width=16}
+plot_grid(ncol=3,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.1",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T) + scale_color_discrete_diverging(palette = "Berlin"),
+  #scale_color_discrete_qualitative(15,palette = "Harmonic"),
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.3",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Berlin"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Patient",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Berlin"),
+   plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Berlin"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Phase",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Berlin")
+  
+)
+
+```
+
+```{r, fig.width=16}
+plot_grid(ncol=3,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.1",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T) + scale_color_discrete_diverging(palette = "Tropic"),
+  #scale_color_discrete_qualitative(15,palette = "Harmonic"),
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.3",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Tropic"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Patient",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Tropic"),
+   plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Tropic"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Phase",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Tropic")
+  
+)
+
+```
+```{r, fig.width=16}
+plot_grid(ncol=3,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.1",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku"),
+  #scale_color_discrete_qualitative(15,palette = "Harmonic"),
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.3",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Patient",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku"),
+   plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Phase",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.75)
+  
+)
+
+```
+```{r, fig.width=16}
+plot_grid(ncol=3,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.1",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T) + scale_color_discrete_diverging(palette = "Cyan-Magenta"),
+  #scale_color_discrete_qualitative(15,palette = "Harmonic"),
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.3",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Cyan-Magenta"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Patient",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Cyan-Magenta"),
+   plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Cyan-Magenta"),
+   plot_cells(
+    cds2,
+    color_cells_by = "Phase",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_diverging(palette = "Cyan-Magenta")
+  
+)
+
+
+```
+
+```{r, fig.width=16}
+# Set the assay back as "integrated"
+integrated.mono <- as.Seurat(cds2, assay = NULL)
+#head(integrated.mono)
+FeaturePlot(integrated.mono, "Size_Factor", cols= hcl.colors(6, "Turku"), pt.size=0.5)
+plot_grid(ncol = 3,
+  FeaturePlot(integrated.mono, "Size_Factor", cols= hcl.colors(6, "Turku"), pt.size=0.5),
+  FeaturePlot(integrated.mono, "Size_Factor", cols= hcl.colors(6, "broc"), pt.size=0.5),
+  DimPlot(integrated.mono,group.by = c("Patient"), label=TRUE, cols= hcl.colors(7, "broc"), pt.size=0.5 ),
+  DimPlot(integrated.mono, group.by = c("integrated_snn_res.0.1"), label=TRUE, cols= hcl.colors(10, "broc"), pt.size=0.5),
+
+  DimPlot(integrated.mono,group.by = c("monocle3_clusters"), label=TRUE, cols= hcl.colors(20, "broc"), pt.size=0.5 ),
+  DimPlot(integrated.mono,group.by = c("orig.ident"), label=TRUE, cols= hcl.colors(15, "broc"), pt.size=0.5 ),
+  DimPlot(integrated.mono,group.by = c("integrated_snn_res.0.3"), label=TRUE, cols= hcl.colors(20, "broc"), pt.size=0.5 ),
+  DimPlot(integrated.mono,group.by = c("growth"), label=TRUE, cols= hcl.colors(4, "broc"), pt.size=0.5 ),
+  DimPlot(integrated.mono,group.by = c("Phase"), label=TRUE, cols= hcl.colors(4, "broc"), pt.size=0.5 )
+)
+```
+```{r, fig.height=3, fig.width=4}
+
+dittoHeatmap(object=integrated, genes = c("NF1", "PTEN", "CDK4", "CDK6", "MDM2", "MDM4", "CDKN2A", "CDKN2B", "EGFR","ERBB2", "ERBB3", "TP53", "VIM"),
+  metas = NULL,
+  order.by = "growth",
+  cells.use = NULL,
+  annot.by = "Patient",
+  annot.colors = hcl.colors(6, "broc"),
+  assay="RNA",
+  scale= "column",
+  scaled.to.max = T,
+  heatmap.colors.max.scaled= hcl.colors(3, "Turku"))
+dittoHeatmap(object=integrated, genes = c("NF1", "PTEN", "CDK4", "CDK6", "MDM2", "MDM4", "CDKN2A", "CDKN2B", "EGFR","ERBB2", "ERBB3", "TP53", "VIM"),
+  metas = NULL,
+  order.by = "growth",
+  cells.use = NULL,
+  annot.by = "Patient",
+  annot.colors = hcl.colors(6, "earth"),
+  assay="RNA",
+  scale= "column",
+  scaled.to.max = T,
+  heatmap.colors.max.scaled= hcl.colors(4, "Turku"))
+```
+```{r}
+plot_cells(
+    cds2,
+    color_cells_by = "Phase",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.5, nmax= 4)
+```
+```{r, fig.width=16}
+plot_grid(ncol=3,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = F,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = T,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) , 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.1",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.5, nmax= 12),
+
+  
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.3",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.5, nmax= 20),
+   plot_cells(
+    cds2,
+    color_cells_by = "Patient",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.5, nmax= 7),
+   plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.5, nmax= 4),
+   plot_cells(
+    cds2,
+    color_cells_by = "Phase",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    label_roots = T)+ scale_color_discrete_sequential(palette = "Turku",rev=F, alpha = 0.5, nmax= 4)
+  
+)
+
+```
+#```{r, fig.height=20, fig.width=16}
+marker_test_res <- top_markers(cds2, group_cells_by="cluster", 
+                               reference_cells=1000, cores=8)
+top_specific_markers <- marker_test_res %>%
+                            filter(fraction_expressing >= 0.10) %>%
+                            group_by(cell_group) %>%
+                            top_n(10, pseudo_R2)
+
+top_specific_marker_ids <- unique(top_specific_markers %>% pull(gene_id))
+rowData(cds2)$gene_short_name <- row.names(rowData(cds2))
+plot_genes_by_group(cds2,
+                    top_specific_marker_ids,
+                    #group_cells_by="partition",
+                    ordering_type="maximal_on_diag",
+                    max.size=3, pseudocount = 1,
+  scale_max = 3,
+  scale_min = -3)
+
+
+{r, fig.widt=16}
+top_specific_markers <- marker_test_res %>%
+                            filter(fraction_expressing >= 0.10) %>%
+                            group_by(cell_group) %>%
+                            top_n(3, pseudo_R2)
+
+top_specific_marker_ids <- unique(top_specific_markers %>% pull(gene_id))
+
+plot_genes_by_group(cds2,
+                    top_specific_marker_ids,
+                    group_cells_by="cluster",
+                    ordering_type="cluster_row_col",
+                    max.size=3)
+
+plot_genes_by_group(cds2,
+                    top_specific_marker_ids,
+                    group_cells_by="cluster",
+                    ordering_type="maximal_on_diag",
+                    max.size=3)
+

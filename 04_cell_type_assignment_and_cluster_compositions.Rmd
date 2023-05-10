@@ -1,0 +1,333 @@
+---
+title: "Cell cycle regression and RPCA integration"
+author: "Milena Doroszko"
+date: "20/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/")
+memory.limit(1048576)
+if (!requireNamespace("monocle3", quietly = TRUE)) {
+  setRepositories(ind = 1:2)
+  remotes::install_github(
+    repo = "cole-trapnell-lab/monocle3",
+    upgrade = FALSE
+  )
+}
+library(BiocManager)
+library(remotes)
+library(devtools)
+library(monocle3)
+library(Seurat)
+library(SeuratData)
+library(SeuratWrappers)
+library(ggplot2)
+library(patchwork)
+library(magrittr)
+library(cowplot)
+library(clustree)
+library(dittoSeq)
+library(colorspace)
+plan("multisession", workers = 1)
+options(future.globals.maxSize= 16000*1024^2)
+```
+
+```{r, fig.width=16}
+#load data
+integrated<-readRDS("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/brain_plastic_noCC_PRPCA3k_29042023_clustered_publ.rds")
+head(integrated)
+```
+
+##Assign cell types on the basis of GSEA
+```{r}
+#create a column for cell type assignment filled with cluster numbers
+integrated$assigned_cell_type<- integrated$integrated_snn_res.0.2
+#recode the cluster numbers with cell type name
+integrated$assigned_cell_type <- dplyr::recode(integrated$assigned_cell_type,
+                                                  "0"= "0-Oligo",
+                                               "1"= "1-Astrocyte/Radial.glia/Microglia",
+                                               "2"= "2-Neuron", "3"= "3-G1/S-Phase",
+                                               "4"="4-Radial.glia/MES1",
+                                               "5"="5-G1.S",
+                                               "6"="6-Astrocyte/NPC2",
+                                         "7"="7-MES1/Macrophage, Endothelial.cell",
+                                         "8"="8-G2/M",
+                                         "9"="9-G2/M",
+                                         "10"="10-Oligo/Mast.cell",
+                                         "11"="11-Astrocyte/Radial.glia/OPC/GSC", 
+                                         "12"="12-MES2/Macrophage", 
+                                         "13"="13-MES1/MES2/Macrophage", 
+                                         "14"="14-MES2", 
+                                         "15"="15-Pericvascular.fib", 
+                                         "16"="16-Astrocyte/Radial.glia/OPC/GSC", 
+                                         "17"="17-Fibroblasts", 
+                                         "18"="18-Fibroblasts/Smooth.muscle.cell", 
+                                         "19"="19-Meningeal.cell/Perivascular.fib", 
+                                         "20"="20-Smooth.muscle.cell/Mural.cell", 
+                                         "21"="21-Smooth.muscle.cell/Fibroblast")
+
+dittoBarPlot(integrated, "assigned_cell_type", group.by = "Patient")
+dittoBarPlot(integrated, "Patient", group.by = "assigned_cell_type")
+dittoBarPlot(integrated, "type", group.by = "assigned_cell_type")
+dittoBarPlot(integrated, "assigned_cell_type", group.by = "type")
+saveRDS(integrated, file="brain_plastic_noCC_PRPCA3k_29042023_clustered_cell_typed.rds")
+```
+
+```{r, fig.width=7, fig.height=7}
+#change default seurat_clusters to the most optimal resolution which in theis case is 0.2
+integrated@meta.data$seurat_clusters<-integrated@meta.data$integrated_snn_res.0.2
+library(ggalluvial)
+library(ggforce)
+
+head(integrated)
+custom_colors <- list()
+
+colors_dutch <- c(
+  '#FFC312','#C4E538','#12CBC4','#FDA7DF','#ED4C67',
+  '#F79F1F','#A3CB38','#1289A7','#D980FA','#B53471',
+  '#EE5A24','#009432','#0652DD','#9980FA','#833471',
+  '#EA2027','#006266','#1B1464','#5758BB','#6F1E51'
+)
+rev_dutch<-rev(colors_dutch)
+rev_dutch
+azi_col<-c("#5758BB", "#EA2027","#34e7e4", "#0be881", "#ffd32a", "#833471")
+azi_col2<-c("#34ace0", "#ED4C67", "#9980FA", "#A3CB38", "#F79F1F", "#006266")
+
+colors_spanish <- c(
+  '#40407a','#706fd3','#f7f1e3','#34ace0','#33d9b2',
+  '#2c2c54','#474787','#aaa69d','#227093','#218c74',
+  '#ff5252','#ff793f','#d1ccc0','#ffb142','#ffda79',
+  '#b33939','#cd6133','#84817a','#cc8e35','#ccae62'
+)
+
+custom_colors$discrete <- c(colors_dutch, colors_spanish)
+custom_colors
+#imp@meta.data$seurat_clusters<-imp@meta.data$integrated_snn_res.0.4
+clusters <- levels(integrated@meta.data$seurat_clusters)
+cell_types <- sort(unique(integrated@meta.data$type))
+samples <- sort(unique(integrated@meta.data$Patient))
+assigned_types <- levels(integrated@meta.data$assigned_cell_type)
+growths <- sort(unique(integrated@meta.data$growth))
+resols <- levels(integrated@meta.data$integrated_snn_res.0.2)
+```
+
+```{r, fig.width=8, fig.height=6}
+#growth x clusters
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(growths)], custom_colors$discrete[1:length(clusters)]),
+  c(growths,clusters)
+)
+data <- integrated@meta.data %>%
+  group_by(seurat_clusters,growth) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = unique(y))
+  )
+DataFrame(data)
+data_labels <- tibble(
+    group = c(
+      rep('growth', length(growths)),
+      rep('seurat_clusters', length(clusters))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'growth', 1, 0),
+    nudge_x = ifelse(group == 'growth', -0.1, 0.1)
+  )
+DataFrame(data_labels)
+p5<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = growth), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('growth','Cluster')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p5
+
+#samples x clusters
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(samples)], custom_colors$discrete[1:length(clusters)]),
+  c(samples,clusters)
+)
+data <- integrated@meta.data %>%
+  group_by(Patient,seurat_clusters) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = unique(y))
+  )
+DataFrame(data)
+data_labels <- tibble(
+    group = c(
+      rep('Patient', length(samples)),
+      rep('seurat_clusters', length(clusters))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'Patient', 1, 0),
+    nudge_x = ifelse(group == 'Patient', -0.1, 0.1)
+  )
+DataFrame(data_labels)
+p1<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = Patient), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('Patient','Cluster')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p1
+#samples xclusters/assigned.cell.type
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(samples)], custom_colors$discrete[1:length(assigned_types)]),
+  c(samples,assigned_types)
+)
+
+data <- integrated@meta.data %>%
+  dplyr::rename(assigned_type = assigned_cell_type) %>%
+  dplyr::mutate(assigned_type = factor(assigned_type, levels = assigned_types)) %>%
+  group_by(Patient, assigned_type) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = c(samples,assigned_types))
+  )
+data
+data_labels <- tibble(
+    group = c(
+      rep('Patients', length(samples)),
+      rep('assigned_type', length(assigned_types))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'Patient', 1, 0),
+    nudge_x = ifelse(group == 'Patient', -0.1, 0.1)
+  )
+data_labels
+p4<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = Patient), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('Patient','Cell type')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p4
+
+color_assignments <- setNames(
+  c(custom_colors$discrete[1:length(cell_types)], custom_colors$discrete[1:length(assigned_types)]),
+  c(cell_types,assigned_types)
+)
+
+data <- integrated@meta.data %>%
+  dplyr::rename(assigned_type = assigned_cell_type) %>%
+  dplyr::mutate(assigned_type = factor(assigned_type, levels = assigned_types)) %>%
+  group_by(assigned_type,type ) %>%
+  tally() %>%
+  ungroup() %>%
+  gather_set_data(1:2) %>%
+  dplyr::mutate(
+    x = factor(x, levels = unique(x)),
+    y = factor(y, levels = c(assigned_types,cell_types))
+  )
+data
+data_labels <- tibble(
+    group = c(
+      rep('type', length(assigned_types)),
+      rep('assigned_type', length(cell_types))
+    )
+ ) %>%
+  mutate(
+    hjust = ifelse(group == 'type', 1, 0),
+    nudge_x = ifelse(group == 'type', -0.1, 0.1)
+  )
+data_labels
+p7<-ggplot(data, aes(x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = type), alpha = 0.75, axis.width = 0.15) +
+  geom_parallel_sets_axes(aes(fill = y), color = 'black', axis.width = 0.1) +
+  geom_text(
+    aes(y = n, split = y), stat = 'parallel_sets_axes', fontface = 'bold',
+    hjust = data_labels$hjust, nudge_x = data_labels$nudge_x
+  ) +
+  scale_x_discrete(labels = c('Cell type','type')) +
+  scale_fill_manual(values = color_assignments) +
+  theme_bw() +
+  theme(
+    legend.position = 'none',
+    axis.title = element_blank(),
+    axis.text.x = element_text(face = 'bold', colour = 'black', size = 15),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank()
+  )
+p7
+p1
+p1+p7
+ggsave(
+  'plots/brain_plastic_res02clusters_cell_types_alluvialp2p4.png',
+  p4 + p2 + plot_layout(ncol = 2),
+  height = 6, width = 8
+)
+```
+
+
+```{r}
+sessionInfo()
+```

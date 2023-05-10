@@ -1,0 +1,297 @@
+---
+title: "Cell cycle regression and RPCA integration"
+author: "Milena Doroszko"
+date: "20/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/")
+memory.limit(1048576)
+if (!requireNamespace("monocle3", quietly = TRUE)) {
+  setRepositories(ind = 1:2)
+  remotes::install_github(
+    repo = "cole-trapnell-lab/monocle3",
+    upgrade = FALSE
+  )
+}
+library(BiocManager)
+library(remotes)
+library(devtools)
+library(monocle3)
+library(Seurat)
+library(SeuratData)
+library(SeuratWrappers)
+library(ggplot2)
+library(patchwork)
+library(magrittr)
+library(cowplot)
+library(clustree)
+library(dittoSeq)
+library(colorspace)
+plan("multisession", workers = 1)
+options(future.globals.maxSize= 16000*1024^2)
+```
+
+```{r, fig.width=16}
+#load data and look at the cluster separation
+integrated<-readRDS("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/brain_plastic_noCC_PRPCA3k_29042023_clustered_publ.rds")
+head(integrated)
+
+plot_grid(ncol = 3,
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.01"), label=TRUE, cols= hcl.colors(8, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.03"), label=TRUE, cols= hcl.colors(11, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.1"), label=TRUE, cols= hcl.colors(17, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.2"), label=TRUE, cols= hcl.colors(21, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.3"), label=TRUE, cols= hcl.colors(25, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.4"), label=TRUE, cols= hcl.colors(30, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  DimPlot(integrated, group.by = c("integrated_snn_res.0.5"), label=TRUE, cols= hcl.colors(35, "Zissou 1"), pt.size=0.7)+ NoLegend(),
+  
+   #DimPlot(integrated, group.by = c("Patient"), label=TRUE, cols= hcl.colors(6, "Zissou 1"), pt.size=2)+ NoLegend(),
+  DimPlot(integrated, group.by = c("growth"), label=TRUE, cols= hcl.colors(3, "Zissou 1"), pt.size=1)+ NoLegend(),
+  DimPlot(integrated, group.by = c("Phase"), label=TRUE, cols= hcl.colors(3, "cividis"), pt.size=1)+ NoLegend()
+)
+
+```
+##Draw clustree of different resolutions to see major cell groups and their separation
+```{r, fig.width=10, fig.height=5}
+
+clustree(integrated, prefix = "integrated_snn_res.")
+label_position <- function(labels) {
+    if (length(unique(labels)) == 1) {
+        position <- as.character(unique(labels))
+    } else {
+        position <- "mixed"
+    }
+    return(position)
+}
+
+clustree(integrated, prefix = "integrated_snn_res.", node_label = "cluster",
+         node_label_aggr = "label_position")+
+    scale_color_brewer(palette = "Set1")
+clustree(integrated, prefix = "integrated_snn_res.", node_colour = "sc3_stability", node_size = 10,
+         node_alpha = 0.8)+ scale_edge_color_continuous(low = "blue", high = "red")+
+       scale_color_gradient(low = "#1289A7",  high = "#FFC312")
+
+clustree(integrated, prefix = "integrated_snn_res.", node_colour = "sc3_stability", node_size = 10,
+         node_alpha = 1)+ scale_edge_color_continuous(low = "blue", high = "red")+
+       scale_color_gradient(low = "#1289A7",  high = "#FFC312")
+```
+
+## Find cluster markers at different resolutions
+```{r}
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.01")
+markers_genes01 <- FindAllMarkers(integrated,logfc.threshold = 0.2, min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA", verbose = T, check_sanity = FALSE)
+write.table(x=markers_genes01, file="brain_plastic_RPCA3k_noCC_29042023_markers_res0.01.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.03")
+markers_genes03 <- FindAllMarkers(integrated,logfc.threshold = 0.2, min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA", verbose = T, check_sanity = FALSE)
+write.table(x=markers_genes03, file="brain_plastic_RPCA3k_noCC_29042023_markers_res0.03.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.2")
+markers_genes2 <- FindAllMarkers(integrated,logfc.threshold = 0.2, min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA", verbose = F, check_sanity = FALSE)
+write.table(x=markers_genes2, file="brain_plastic_RPCA3k_noCC_29042023_markers_res0.2.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.5")
+markers_genes5 <- FindAllMarkers(integrated, logfc.threshold = 0.2,min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA",verbose = F,check_sanity = FALSE)
+
+write.table(x=markers_genes5, file="brain_plastic_RPCA3k_noCC_29042023_markers_res05.txt", quote = FALSE)
+
+integrated <- SetIdent(integrated, value = "integrated_snn_res.0.4")
+markers_genes4 <- FindAllMarkers(integrated, logfc.threshold = 0.2,min.pct = 0.25,min.diff.pct = 0.2,
+                  only.pos = F, max.cells.per.ident =1000,assay = "RNA",verbose = F,check_sanity = FALSE)
+
+write.table(x=markers_genes4, file="brain_plastic_RPCA3k_noCC_29042023_markers_res04.txt", quote = FALSE)
+```
+
+```{r, fig.width=16}
+
+markers_genes2 %>% group_by(cluster)  %>% top_n(5, avg_log2FC)-> top2
+markers_genes2 %>% group_by(cluster)  %>% top_n(5, pct.2)-> top21
+markers_genes03 %>% group_by(cluster)  %>% top_n(5, avg_log2FC)-> top03
+markers_genes03 %>% group_by(cluster)  %>% top_n(5, pct.2)-> top031
+
+scld<-ScaleData(integrated, features=rownames(integrated),assay="RNA",verbose=F)
+DotPlot(scld, features = as.character(unique(top2$gene)),assay = "RNA",group.by = "integrated_snn_res.0.2", cols= hcl.colors(2, "Zissou 1")) +coord_flip()
+DotPlot(scld, features = as.character(unique(top03$gene)),assay = "RNA", group.by = "integrated_snn_res.0.01",cols= hcl.colors(2, "Zissou 1")) +coord_flip()
+
+DoHeatmap(scld, features = as.character(unique(top2$gene)) , assay = "RNA", slot = "scale.data", group.colors = hcl.colors(22, "Zissou 1"))+ scale_fill_gradientn(colors = hcl.colors(5, "Zissou 1"))  +
+    theme(legend.text=element_text(size=20))+ guides(colour = guide_legend(override.aes = list(size=40)))
+DoHeatmap(scld, features = as.character(unique(top03$gene)) , assay = "RNA", slot = "scale.data", group.colors = hcl.colors(22, "Zissou 1"))+ scale_fill_gradientn(colors = hcl.colors(5, "Zissou 1"))
+VlnPlot(scld, features = c("ICAM1", "FABP7", "OLIG1", "TCF4", "NEUROD1", "CD44", "RBFOX3", "RELN"),assay="RNA", group.by = "orig.ident")
+```
+
+
+
+```{r, fig.width=16}
+dittoHeatmap(object=scld, genes = as.character(unique(top03$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  order.by = "integrated_snn_res.0.01",
+  assay="RNA",
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"),
+  complex=TRUE,
+  annot.by = c("integrated_snn_res.0.01","Patient","growth", "Phase", "integrated_snn_res.0.2"))
+
+
+dittoHeatmap(object=scld, genes = as.character(unique(top031$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  order.by = "integrated_snn_res.0.01",
+  assay="RNA",
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"),
+  complex=TRUE,
+  annot.by = c("integrated_snn_res.0.01","Patient","growth", "Phase", "integrated_snn_res.0.2"))
+
+
+dittoHeatmap(object=scld, genes = as.character(unique(top2$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  order.by = "integrated_snn_res.0.2",
+  assay="RNA",
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"),
+  complex=TRUE,
+  annot.by = c("integrated_snn_res.0.01","Patient","growth", "Phase", "integrated_snn_res.0.2"))
+
+dittoHeatmap(object=scld, genes = as.character(unique(top21$gene)) ,
+  metas = NULL,
+  cells.use = NULL,
+  order.by = "integrated_snn_res.0.2",
+  assay="RNA",
+  scaled.to.max = TRUE,
+  heatmap.colors.max.scaled= hcl.colors(5, "Zissou 1"),
+  complex=TRUE,
+  annot.by = c("integrated_snn_res.0.01","Patient","growth", "Phase", "integrated_snn_res.0.2"))
+head(integrated)
+```
+
+
+
+##Look at the cluster distribution among Patients
+```{r}
+dittoBarPlot(integrated, "integrated_snn_res.0.03", group.by = "type")
+dittoBarPlot(integrated, "type", group.by = "integrated_snn_res.0.03")
+dittoBarPlot(integrated, "integrated_snn_res.0.01", group.by = "growth")
+dittoBarPlot(integrated, "growth", group.by = "integrated_snn_res.0.01")
+
+#dittoBarPlot(integrated.sub, "seurat_clusters by Patient")
+#dittoBarPlot(integrated.sub, "seurat_clusters by cluster", group.by= "integrated_snn_res.0.1")
+```
+```{r setup, include=FALSE}
+library(devtools)
+library(data.table)
+library(fgsea)
+library(ggplot2)
+library(stats)
+library(tibble)
+library(DT)
+library(scMiko)
+library(knitr)
+library(DOSE)
+library(gdata)
+library(enrichR)
+listEnrichrSites()
+setEnrichrSite("Enrichr") # Human genes
+websiteLive <- TRUE
+
+##load_database
+mila<-read.csv("c:/Users/mildo141/Dropbox (UU)/SSF2_single_cell/comp/Output/GSEA/Mila_4.csv",header= T)
+mila<-as.list(mila[-1,])
+mila<-lapply(mila, function(z){ z[z != ""]})
+```
+
+```{r cars}
+#load the file of cluster markers
+clusters<- markers_genes2
+#remove rownames in first column. Seurat adds a suffix if the gene is found as a marker cluster of many clusters
+rownames(clusters)<-NULL
+head(clusters)
+#sysidName <- paste0("cluster_0", clusters$cluster)
+sysidName<-clusters$cluster
+# chose the columns in your cluster marker list. Seurat outputs "gene", "avg_log2FC", "cluster" so that's what we will use here
+c<-clusters%>%select("gene", "avg_log2FC", "cluster")
+#check if it looks as it should
+head(c)
+#split data according to their cluster assignment
+splitData <- split(c,sysidName)
+#check how it looks
+str(splitData)
+#and what is the number of clusters --> does it align with what you've expected?
+length(splitData)
+
+```
+
+
+```{r, fig.height=4}
+ggplot(filt2, aes(x= cluster, y=pathway, size=padj, color=NES, group=cluster)) + geom_point(alpha = 1) +   theme_light()+ coord_flip()+scale_color_gradient(low = "#1289A7",  high = "#FFC312")+
+      scale_size_continuous(range=c(1,6), trans = "reverse")+ guides(size = guide_legend(reverse = TRUE))+ 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ scale_x_continuous(breaks = seq(0, (length(splitData)-1),by = 1))
+```
+
+#Enrichment of your clusters using Enrichr package
+```{r, fig.width=16, fig.height=5}
+#check what are the databases in the package
+dbs <- listEnrichrDbs()
+flex.asDT(dbs, page_length = 10,  scrollX = TRUE)
+
+#specify which databases to use for the enrichment
+
+fdbs <- c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021", "GO_Biological_Process_2021")
+
+tdbs<-c("GTEx_Tissues_V8_2023", "Allen_Brain_Atlas_10x_scRNA_2021", "Tabula_Sapiens")
+for (i in seq_along(splitData)) {
+  # B2 should in your case be a matrix of genes x clusters, where the entries are the log2FC-values (or any other measure)
+      B2<-as.data.frame(splitData[i])
+      #ranks <- B2[,2]
+      enriched <- enrichr(B2[,1], fdbs)
+      s<- plotEnrich(enriched[[1]], showTerms = 40, numChar = 40, y = "Count", orderBy = "P.value", title=paste0("GO_Mol_Fun_2021_", B2[2,3]))
+      t<- plotEnrich(enriched[[2]], showTerms = 40, numChar = 40, y = "Count", orderBy = "P.value", title=paste0("GO_Cellr_Comp_2021_", B2[2,3]))
+      u<-plotEnrich(enriched[[3]], showTerms = 40, numChar = 40, y = "Count", orderBy = "P.value", title=paste0("GO_Biol_Proc_2021_", B2[2,3]))
+         print(cowplot::plot_grid(ncol=3,s,t,u,nrow = 1, align = "h", labels = "AUTO"))
+}
+```
+
+##can genetic alterations explain clustering or mode of invasion in mouse brain?
+```{r, fig.width=3, fig.height=2}
+genes<- c("NF1", "PTEN", "CDK4", "CDK6", "MDM2", "MDM4", "CDKN2A", "CDKN2B", "EGFR","ERBB2", "ERBB3", "TP53", "VIM")
+subset1<-subset(integrated, features= genes)
+subset1<-ScaleData(subset1, assay = "RNA")
+subset1 <- SetIdent(subset1, value = "integrated_snn_res.0.01")
+subset2 <- SetIdent(subset1, value = "growth")
+#set new colorscale to match other figures
+cols = colorRampPalette(c("#1289A7", "#FFC312"))(6)
+
+r1<-AverageExpression(
+  subset1,assays = "RNA",features = genes,return.seurat = FALSE,
+  group.by = "ident",add.ident = NULL,slot = "scale.data",
+  verbose = TRUE)%>%as.data.frame%>%pheatmap::pheatmap(color=cols)
+
+
+r2<-AverageExpression(
+  subset2,assays = "RNA",features = genes,return.seurat = FALSE,
+  group.by = "ident",add.ident = NULL,slot = "scale.data",
+  verbose = TRUE)%>%as.data.frame%>%pheatmap::pheatmap(color=cols)
+
+
+```
+
+```{r}
+session_info()
+```

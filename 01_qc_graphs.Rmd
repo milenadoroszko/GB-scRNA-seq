@@ -1,0 +1,319 @@
+---
+title: "QC graphs"
+author: "Milena Doroszko"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r }
+setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/Harmony_brain_June_2022/")
+
+library(Seurat)
+library(Matrix)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(clustree)
+library(dittoSeq)
+library(harmony)
+```
+```{r,message='hide',warning='hide',results='hold'}
+S6_3013 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3013_s6_filtered_feature_bc_matrix.h5", use.names = T)
+S3_3013 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3013_S3_filtered_feature_bc_matrix.h5", use.names = T)
+
+S2_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3180_S2_filtered_feature_bc_matrix.h5", use.names = T)
+S8_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3180_S8_filtered_feature_bc_matrix.h5", use.names = T)
+
+S5_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3054S5_filtered_feature_bc_matrix.h5", use.names = T)
+S9_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3054S9_filtered_feature_bc_matrix.h5", use.names = T)
+
+S11_3179 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3179S11_filtered_feature_bc_matrix.h5", use.names = T)
+
+S5_3031 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3031S5_filtered_feature_bc_matrix.h5", use.names = T)
+
+S9_3220 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3220S9_filtered_feature_bc_matrix.h5", use.names = T)
+S10_3220 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3220S10_filtered_feature_bc_matrix.h5", use.names = T)
+
+S6_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3123S6_filtered_feature_bc_matrix.h5", use.names = T)
+S7_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3123S7_filtered_feature_bc_matrix.h5", use.names = T)
+
+S1_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3065S1_filtered_feature_bc_matrix.h5", use.names = T)
+S2_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files//3065S2_filtered_feature_bc_matrix.h5", use.names = T)
+
+```
+
+***
+#OBJ_TITLE:
+
+#OBJ_ALL1:
+
+```{r}
+sdata1.S6 <- CreateSeuratObject(S6_3013, project = "3013S6")
+sdata1.S6@meta.data$Chemistry <- "v2" 
+sdata1.S6@meta.data$Patient <- "U3013MG"
+sdata1.S6@meta.data$growth <- "PV"
+sdata1.S6@meta.data$type <-"brain"
+  
+sdata1.S3 <- CreateSeuratObject(S3_3013, project = "3013S3")
+sdata1.S3@meta.data$Chemistry <- "v2"
+sdata1.S3@meta.data$Patient <- "U3013MG"
+sdata1.S3@meta.data$growth <- "PV"
+sdata1.S3@meta.data$type <-"brain"
+  
+sdata1.S2 <- CreateSeuratObject(S2_3180, project = "3180S2")
+sdata1.S2@meta.data$Chemistry <- "v2"
+sdata1.S2@meta.data$Patient <- "U3180MG"
+sdata1.S2@meta.data$growth <-"WM"
+sdata1.S2@meta.data$type <-"brain"
+  
+sdata1.S8<- CreateSeuratObject(S8_3180, project = "3180S8")
+sdata1.S8@meta.data$Chemistry <- "v2"
+sdata1.S8@meta.data$Patient <- "U3180MG"
+sdata1.S8@meta.data$growth <-"WM"
+sdata1.S8@meta.data$type <-"brain"
+  
+sdata2.S5<- CreateSeuratObject(S5_3054, project = "3054S5")
+sdata2.S5@meta.data$Chemistry <- "v3"
+sdata2.S5@meta.data$Patient <- "U3054MG"
+sdata2.S5@meta.data$growth <-"PV"
+sdata2.S5@meta.data$type <-"brain"
+  
+sdata2.S9<- CreateSeuratObject(S9_3054, project = "3054S9")
+sdata2.S9@meta.data$Chemistry <- "v3"
+sdata2.S9@meta.data$Patient <- "U3054MG"
+sdata2.S9@meta.data$growth <-"PV"
+sdata2.S9@meta.data$type <-"brain"
+  
+sdata4.S11 <- CreateSeuratObject(S11_3179, project = "3179S11")
+sdata4.S11@meta.data$Chemistry <- "v3" 
+sdata4.S11@meta.data$Patient <- "U3179MG"
+sdata4.S11@meta.data$growth <-"WM"
+sdata4.S11@meta.data$type <-"brain"
+  
+sdata3.S5 <- CreateSeuratObject(S5_3031, project = "3031S5")
+sdata3.S5@meta.data$Chemistry <- "v3" 
+sdata3.S5@meta.data$Patient <- "U3031MG"
+sdata3.S5@meta.data$growth <-"WM"
+sdata3.S5@meta.data$type <-"brain"
+  
+sdata4.S9 <- CreateSeuratObject(S9_3220, project = "3220S9")
+sdata4.S9@meta.data$Chemistry <- "v3" 
+sdata4.S9@meta.data$Patient <- "U3220MG"
+sdata4.S9@meta.data$growth <-"M"
+sdata4.S9@meta.data$type <-"brain"
+  
+sdata4.S10 <- CreateSeuratObject(S10_3220, project = "3220S10")
+sdata4.S10@meta.data$Chemistry <- "v3" 
+sdata4.S10@meta.data$Patient <- "U3220MG"
+sdata4.S10@meta.data$growth <-"M"
+sdata4.S10@meta.data$type <-"brain"
+  
+sdata3.S6 <- CreateSeuratObject(S6_3180, project = "3180S6")
+sdata3.S6@meta.data$Chemistry <- "v3" 
+sdata3.S6@meta.data$Patient <- "U3180MG"
+sdata3.S6@meta.data$growth <-"WM"
+sdata3.S6@meta.data$type <-"brain"
+  
+sdata4.S7 <- CreateSeuratObject(S7_3180, project = "3180S7")
+sdata4.S7@meta.data$Chemistry <- "v3" 
+sdata4.S7@meta.data$Patient <- "U3180MG"
+sdata4.S7@meta.data$growth <-"WM"
+sdata4.S7@meta.data$type <-"brain"
+  
+sdata3.S1 <- CreateSeuratObject(S1_3054, project = "3054S1")
+sdata3.S1@meta.data$Chemistry <- "v3" 
+sdata3.S1@meta.data$Patient <- "U3054MG"
+sdata3.S1@meta.data$growth <-"PV"
+sdata3.S1@meta.data$type <-"brain"
+
+sdata3.S2 <- CreateSeuratObject(S2_3054, project = "3054S2")
+sdata3.S2@meta.data$Chemistry <- "v3"
+sdata3.S2@meta.data$Patient <- "U3054MG"
+sdata3.S2@meta.data$growth <-"PV"
+sdata3.S2@meta.data$type <-"brain"
+  
+p3013.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3013_P_filtered_feature_bc_matrix.h5")
+p3013 <- CreateSeuratObject(counts =p3013.data, project = "p3013", min.cells = 3, min.features = 200)
+p3013@meta.data$Chemistry <- "v3"
+p3013@meta.data$Patient <- "U3013MG" 
+p3013@meta.data$growth <- "PV" 
+p3013@meta.data$type <-"plastic"
+  
+p3054.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3054_P_filtered_feature_bc_matrix.h5")
+p3054 <- CreateSeuratObject(counts =p3054.data, project = "p3054", min.cells = 3, min.features = 200)
+p3054@meta.data$Chemistry <- "v3"
+p3054@meta.data$Patient <- "U3054MG" 
+p3054@meta.data$growth <- "PV"
+p3054@meta.data$type <-"plastic"
+p3054_2.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3065_P_filtered_feature_bc_matrix.h5")
+p3054_2 <- CreateSeuratObject(counts =p3054_2.data, project = "p3054_2", min.cells = 3, min.features = 200)
+p3054_2@meta.data$Chemistry <- "v3"
+p3054_2@meta.data$Patient <- "U3054MG"
+p3054_2@meta.data$growth <- "PV" 
+p3054_2@meta.data$type <-"plastic"
+
+p3180.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3180_P_filtered_feature_bc_matrix.h5")
+p3180 <- CreateSeuratObject(counts =p3180.data, project = "p3180", min.cells = 3, min.features = 200)
+p3180@meta.data$Chemistry <- "v3" 
+p3180@meta.data$Patient <- "U3180MG" 
+p3180@meta.data$growth <- "WM" 
+p3180@meta.data$type <-"plastic"
+
+p3220.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3220_P_filtered_feature_bc_matrix.h5")
+p3220 <- CreateSeuratObject(counts =p3220.data, project = "p3220", min.cells = 3, min.features = 200)
+p3220@meta.data$Chemistry <- "v3" 
+p3220@meta.data$Patient <- "U3220MG" 
+p3220@meta.data$growth <- "M"
+p3220@meta.data$type <-"plastic"
+
+p3179.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3179_P_filtered_feature_bc_matrix.h5")
+p3179 <- CreateSeuratObject(counts =p3179.data, project = "p3179", min.cells = 3, min.features = 200)
+p3179@meta.data$Chemistry <- "v3"
+p3179@meta.data$Patient <- "U3179MG" 
+p3179@meta.data$growth <- "WM" 
+p3179@meta.data$type <-"plastic"
+
+
+p3031.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3031_P_filtered_feature_bc_matrix.h5")
+p3031 <- CreateSeuratObject(counts =p3031.data, project = "p3031", min.cells = 3, min.features = 800)
+p3031@meta.data$Chemistry <- "v3"
+p3031@meta.data$Patient <- "U3031MG" 
+p3031@meta.data$growth <- "WM" 
+p3031@meta.data$type <-"plastic"
+
+# Merge datasets into one single seurat object
+alldata.int <- merge(sdata1.S6, c(sdata1.S3,sdata1.S2,sdata1.S8,sdata2.S5,sdata2.S9,sdata4.S11,sdata3.S5, sdata4.S9, sdata4.S10, sdata3.S6, sdata4.S7,sdata3.S1, sdata3.S2,p3013,p3054,p3054_2, p3180, p3220, p3179, p3031), add.cell.ids=c("3013S6","3013S3", "3180S2", "3180S8", "3054S5", "3054S9", "3179S11", "3031S5", "3220S9", "3220S10", "3180S6", "3180S7", "3054S1", "3054S2","p3013","p3054", "p3054_2", "p3180", "p3220", "p3179", "p3031"))
+
+as.data.frame(alldata.int@assays$RNA@counts[1:10,1:2])
+head(alldata.int@meta.data,10)
+```
+#QC
+```{r, fig.width=16}
+# Way1: Doing it using Seurat function
+alldata.int <- PercentageFeatureSet(alldata.int, "^MT-", col.name = "percent_mito")
+# Way2: Doing it manually
+
+total_counts_per_cell <- colSums(alldata.int@assays$RNA@counts)
+mito_genes <- rownames(alldata.int)[grep("^MT-",rownames(alldata.int))]
+alldata.int$percent_mito <- colSums(  alldata.int@assays$RNA@counts[mito_genes,]  ) / total_counts_per_cell
+
+head(mito_genes,10)
+# Way1: Doing it using Seurat function
+alldata.int <- PercentageFeatureSet(alldata.int, "^RP[SL]", col.name = "percent_ribo")
+# Way2: Doing it manually
+ribo_genes <- rownames(alldata.int)[grep("^RP[SL]",rownames(alldata.int))]
+head(ribo_genes,10)
+alldata.int$percent_ribo <- colSums(  alldata.int@assays$RNA@counts[ribo_genes,]  ) / total_counts_per_cell
+```
+
+```{r, fig.width=16, fig.height=6}
+feats <- c("nFeature_RNA","nCount_RNA","percent_mito","percent_ribo")
+VlnPlot(alldata.int, group.by= "orig.ident", features = feats, pt.size = 0.01,ncol = 4) + NoLegend()
+VlnPlot(alldata.int, group.by= "Chemistry", features = feats, pt.size = 0.01,ncol = 4) + NoLegend()
+```
+
+```{r,message='hide',warning='hide', results='hold',results='hold',fig.height=5,fig.width=6}
+cowplot::plot_grid(ncol = 4,
+  FeatureScatter(alldata.int, "nCount_RNA"  , "nFeature_RNA", group.by = "orig.ident", pt.size = .5),
+  FeatureScatter(alldata.int, "percent_mito", "nFeature_RNA", group.by = "orig.ident", pt.size = .5),
+  FeatureScatter(alldata.int, "percent_ribo", "nFeature_RNA", group.by = "orig.ident", pt.size = .5),
+  FeatureScatter(alldata.int, "percent_ribo", "percent_mito", group.by = "orig.ident", pt.size = .5)
+)
+
+cowplot::plot_grid(ncol = 2,
+  FeatureScatter(alldata.int, "nCount_RNA"  , "nFeature_RNA", group.by = "orig.ident", pt.size = 1)+ NoLegend(),
+  FeatureScatter(alldata.int, "percent_mito", "nFeature_RNA", group.by = "orig.ident", pt.size = 1)
+)
+#now you see that cells with 
+#highest nFeature have highest nCount -> probably dublets 
+#low nFeatures have also high MT genes
+#nFeature doesn't correlate with %ribo
+#%ribo does not correlate with %mito
+#perhaps not worth removinf ribosomal genes?
+```
+
+```{r}
+#cells should express at least 200 features. Low quality cells will be filtered out by removing cells with high MT genes
+selected_c <- WhichCells(alldata.int, expression = nFeature_RNA > 500)
+#selected_f <- rownames(alldata)[ Matrix::rowSums(alldata) > 3]
+# 10 cells should have at least 1 gene to be consider that gene in your dataset
+selected_f <- rownames(alldata.int)[ Matrix::rowSums(alldata.int@assays$RNA@counts > 0) > 10]
+data.filt <- subset(alldata.int, features=selected_f, cells=selected_c)
+dim(data.filt)
+```
+
+```{r,message='hide',warning='hide', results='hold',results='hold',fig.height=5,fig.width=16}
+#start with cells with many genes detected. In this example we have fairly homogenous data but also correlation with nCounts and nFeatures. Therefore, putting a nFeature cutoff at 4.2k seems fair; 
+
+#start with cells with many genes detected.
+high.det.v3 <- WhichCells(data.filt, expression = nFeature_RNA > 7500)
+high.det.v2 <- WhichCells(data.filt, expression = nFeature_RNA > 5100 & Chemistry=="v2")
+
+# remove these cells
+data.filt <- subset(data.filt, cells=setdiff(WhichCells(data.filt),c(high.det.v2,high.det.v3)))
+
+
+# check number of cells
+ncol(data.filt)
+```
+
+```{r,message='hide',warning='hide', results='hold',results='hold',fig.height=5,fig.width=16}
+#we filter out cells that have over 25% MT (25%MT would also be OK)
+selected_mito <- WhichCells(data.filt, expression = percent_mito < 0.3)
+#no need to filter ribosomal genes here
+#selected_ribo <- WhichCells(data.filt, expression = percent_ribo > 0.05)
+
+# and subset the object to only keep those cells
+data.filt <- subset(data.filt, cells = selected_mito)
+#data.filt <- subset(data.filt, cells = selected_ribo)
+dim(data.filt)
+```
+
+```{r,message='hide',warning='hide', results='hold',results='hold',fig.height=6,fig.width=16}
+feats <- c("nFeature_RNA","nCount_RNA","percent_mito","percent_ribo")
+VlnPlot(data.filt, group.by= "orig.ident", features = feats, pt.size = 0.1,ncol = 4) + NoLegend()
+#looking so much better!
+```
+```{r}
+#Compute the relative expression of each gene per cell; some genes tend to take 50% of the reads when being not related to the studies
+ncol(data.filt)
+rel_expression <- t( t(data.filt@assays$RNA@counts) / Matrix::colSums(data.filt@assays$RNA@counts)) * 100
+most_expressed <- sort(Matrix::rowSums( rel_expression ),T)[20:1] / ncol(data.filt)
+
+par(mfrow=c(1,2),mar=c(4,6,1,1))
+boxplot( as.matrix(t(rel_expression[names(most_expressed),])),cex=.1, las=1, xlab="% total count per cell",col=scales::hue_pal()(20)[20:1],horizontal=TRUE)
+
+```
+```{r}
+# Filter MALAT1
+data.filt <- data.filt[ ! grepl("MALAT1", rownames(data.filt)), ]
+
+# Filter Mitocondrial
+data.filt <- data.filt[ ! grepl("^MT-", rownames(data.filt)), ]
+
+# Filter Ribossomal gene (optional if that is a problem on your data)
+data.filt <- data.filt[ ! grepl("^RP[SL]", rownames(data.filt)), ]
+
+# Filter Hemoglobin gene (optional if that is a problem on your data)
+data.filt <- data.filt[ ! grepl("^HB[AB]", rownames(data.filt)), ]
+
+dim(data.filt)
+#how does it look after taking MALAT1, MT, RP and HB genes from the data?
+rel_expression <- t( t(data.filt@assays$RNA@counts) / Matrix::colSums(data.filt@assays$RNA@counts)) * 100
+most_expressed <- sort(Matrix::rowSums( rel_expression ),T)[20:1] / ncol(data.filt)
+
+par(mfrow=c(1,2),mar=c(4,6,1,1))
+boxplot( as.matrix(t(rel_expression[names(most_expressed),])),cex=.1, las=1, xlab="% total count per cell",col=scales::hue_pal()(20)[20:1],horizontal=TRUE)
+```
+
+```{r,message='hide',warning='hide', results='hold',results='hold',fig.height=8,fig.width=8}
+head(x = data.filt[[]])
+data.filt <- CellCycleScoring(object = data.filt,
+                              g2m.features = cc.genes$g2m.genes,
+                              s.features = cc.genes$s.genes)
+```
+
+```{r,message='hide',warning='hide', results='hold',results='hold',fig.height=5,fig.width=16}
+VlnPlot(data.filt, features = c("S.Score","G2M.Score"), group.by= "orig.ident",ncol = 4, pt.size = .1)
+saveRDS(data.filt, file="brain_plastic_qp.rds")
+```

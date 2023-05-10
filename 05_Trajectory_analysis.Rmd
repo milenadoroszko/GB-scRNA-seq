@@ -1,0 +1,161 @@
+---
+title: "Cell cycle regression and RPCA integration"
+author: "Milena Doroszko"
+date: "20/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/")
+memory.limit(1048576)
+if (!requireNamespace("monocle3", quietly = TRUE)) {
+  setRepositories(ind = 1:2)
+  remotes::install_github(
+    repo = "cole-trapnell-lab/monocle3",
+    upgrade = FALSE
+  )
+}
+library(BiocManager)
+library(remotes)
+library(devtools)
+library(monocle3)
+library(Seurat)
+library(SeuratData)
+library(SeuratWrappers)
+library(ggplot2)
+library(patchwork)
+library(magrittr)
+library(cowplot)
+library(clustree)
+library(dittoSeq)
+library(colorspace)
+plan("multisession", workers = 1)
+options(future.globals.maxSize= 16000*1024^2)
+```
+
+```{r, fig.width=16}
+#load data
+integrated<-readRDS("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/brain_plastic_noCC_PRPCA3k_29042023_clustered_cell_typed.rds")
+head(integrated)
+```
+
+
+
+```{r, fig.width=16, fig.asp=0.58}
+cds <- as.cell_data_set(integrated)
+cds <- cluster_cells(cds, k = 21)
+p1 <- plot_cells(cds, label_groups_by_cluster = TRUE, group_label_size = 8, show_trajectory_graph = F,)
+p2 <- plot_cells(cds, color_cells_by = "partition", show_trajectory_graph = FALSE)
+wrap_plots(p1, p2)
+gc(verbose = FALSE)
+
+integrated.sub <- subset(as.Seurat(cds, assay = NULL), monocle3_partitions == 1)
+cds1 <- as.cell_data_set(integrated.sub)
+cds1 <- learn_graph(cds1, use_partition = F)
+p3<-plot_cells(cds1, color_cells_by = "Patient", label_groups_by_cluster = TRUE, group_label_size = 8, labels_per_group = 1, label_roots= T,
+  label_leaves = F, label_branch_points = F)
+p4<-plot_cells( cds1,color_cells_by = "cluster", label_groups_by_cluster = TRUE, group_label_size = 8,labels_per_group = 1, label_roots= F,
+  label_leaves = T, label_branch_points = F)
+p5<-plot_cells( cds1,color_cells_by = "Patient", label_groups_by_cluster = TRUE, group_label_size = 8,labels_per_group = 1, label_roots= F,
+  label_leaves = F, label_branch_points = T)
+wrap_plots(p3, p4, p5)
+gc(verbose = FALSE)
+```
+
+
+
+```{r, fig.width=16}
+#Now, set up whick cells your trajectory should start from. You can either specify a gene or a group of cells, e.g. cluster 
+AVP<- c("sox2", "NES", "EZH2","SOX9","OLIG2", "OLIG1", "GFAP", "CD44")
+#FeaturePlot(integrated.sub, features= AVP)
+
+VlnPlot(integrated.sub, features = AVP)
+max.avp <- which.max(unlist(FetchData(integrated.sub, AVP)))
+max.avp <- colnames(integrated.sub)[max.avp] #then root_cells = max.avp
+max.avp
+#levels(integrated.sub)
+cds2 <- order_cells(cds1, reduction_method = "UMAP", root_cells = max.avp)
+#IF ROOT THROUGH THE STATE/CLUSTER
+#cluster2.cells <- WhichCells(object = integrated.sub, idents = 2)
+#cds <- order_cells(cds, root_cells = NULL)
+```
+
+
+```{r, fig.width=16}
+plot_grid(ncol=2,
+  plot_cells(
+    cds2,
+    color_cells_by = "pseudotime",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 1,
+    label_groups_by_cluster = T,
+    label_cell_groups = T,
+    label_leaves = F,
+    label_branch_points = F,
+    cell_size=2,
+    label_roots = T)+  scale_color_continuous_sequential(palette = "Viridis", begin = 0.15, end = 0.9) +
+    theme(legend.text=element_text(size=20))+ guides(colour = guide_legend(override.aes = list(size=10))), 
+
+  plot_cells(
+    cds2,
+    color_cells_by = "integrated_snn_res.0.2",
+        show_trajectory_graph = T,
+    trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 1,
+    label_groups_by_cluster = TRUE,
+    labels_per_group = 1,
+    group_label_size = 12,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    cell_size=2,
+    label_roots = T) + scale_color_discrete_divergingx(palette = "Zissou 1")+ theme(legend.text=element_text(size=20))+ guides(colour = guide_legend(override.aes = list(size=10))),
+  
+  
+  
+  plot_cells(
+    cds2,
+    color_cells_by = "assigned_cell_type",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 1,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    cell_size=2,
+    label_roots = T)+ scale_color_discrete_divergingx(palette = "Zissou 1") +
+    theme(legend.text=element_text(size=20))+ guides(colour = guide_legend(override.aes = list(size=10))),
+  plot_cells(
+    cds2,
+    color_cells_by = "growth",
+    group_cells_by = c("cluster"),
+    show_trajectory_graph = T,
+    trajectory_graph_color = "black",
+    trajectory_graph_segment_size = 1.5,
+    label_groups_by_cluster = TRUE,
+    label_cell_groups = F,
+    label_leaves = F,
+    label_branch_points = F,
+    cell_size=2,
+    label_roots = T)+ scale_color_discrete_divergingx(palette = "Zissou 1") +
+    theme(legend.text=element_text(size=20))+ guides(colour = guide_legend(override.aes = list(size=10)))
+)
+```
+
+```{r}
+sessionInfo()
+```
