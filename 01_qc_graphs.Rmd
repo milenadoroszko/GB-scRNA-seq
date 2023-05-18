@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r }
-setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/Harmony_brain_June_2022/")
+setwd("~")
 
 library(Seurat)
 library(Matrix)
@@ -18,27 +18,27 @@ library(dittoSeq)
 library(harmony)
 ```
 ```{r,message='hide',warning='hide',results='hold'}
-S6_3013 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3013_s6_filtered_feature_bc_matrix.h5", use.names = T)
-S3_3013 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3013_S3_filtered_feature_bc_matrix.h5", use.names = T)
+S6_3013 <- Read10X_h5("~3013_s6_filtered_feature_bc_matrix.h5", use.names = T)
+S3_3013 <- Read10X_h5("~3013_S3_filtered_feature_bc_matrix.h5", use.names = T)
 
-S2_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3180_S2_filtered_feature_bc_matrix.h5", use.names = T)
-S8_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3180_S8_filtered_feature_bc_matrix.h5", use.names = T)
+S2_3180 <- Read10X_h5("~3180_S2_filtered_feature_bc_matrix.h5", use.names = T)
+S8_3180 <- Read10X_h5("~3180_S8_filtered_feature_bc_matrix.h5", use.names = T)
 
-S5_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3054S5_filtered_feature_bc_matrix.h5", use.names = T)
-S9_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3054S9_filtered_feature_bc_matrix.h5", use.names = T)
+S5_3054 <- Read10X_h5("~3054S5_filtered_feature_bc_matrix.h5", use.names = T)
+S9_3054 <- Read10X_h5("~3054S9_filtered_feature_bc_matrix.h5", use.names = T)
 
-S11_3179 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3179S11_filtered_feature_bc_matrix.h5", use.names = T)
+S11_3179 <- Read10X_h5("~3179S11_filtered_feature_bc_matrix.h5", use.names = T)
 
-S5_3031 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3031S5_filtered_feature_bc_matrix.h5", use.names = T)
+S5_3031 <- Read10X_h5("~3031S5_filtered_feature_bc_matrix.h5", use.names = T)
 
-S9_3220 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3220S9_filtered_feature_bc_matrix.h5", use.names = T)
-S10_3220 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3220S10_filtered_feature_bc_matrix.h5", use.names = T)
+S9_3220 <- Read10X_h5("~3220S9_filtered_feature_bc_matrix.h5", use.names = T)
+S10_3220 <- Read10X_h5("~3220S10_filtered_feature_bc_matrix.h5", use.names = T)
 
-S6_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3123S6_filtered_feature_bc_matrix.h5", use.names = T)
-S7_3180 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3123S7_filtered_feature_bc_matrix.h5", use.names = T)
+S6_3180 <- Read10X_h5("~3123S6_filtered_feature_bc_matrix.h5", use.names = T)
+S7_3180 <- Read10X_h5("~3123S7_filtered_feature_bc_matrix.h5", use.names = T)
 
-S1_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3065S1_filtered_feature_bc_matrix.h5", use.names = T)
-S2_3054 <- Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files//3065S2_filtered_feature_bc_matrix.h5", use.names = T)
+S1_3054 <- Read10X_h5("~3065S1_filtered_feature_bc_matrix.h5", use.names = T)
+S2_3054 <- Read10X_h5("~/3065S2_filtered_feature_bc_matrix.h5", use.names = T)
 
 ```
 
@@ -132,41 +132,41 @@ sdata3.S2@meta.data$Patient <- "U3054MG"
 sdata3.S2@meta.data$growth <-"PV"
 sdata3.S2@meta.data$type <-"brain"
   
-p3013.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3013_P_filtered_feature_bc_matrix.h5")
+p3013.data <-Read10X_h5("~3013_P_filtered_feature_bc_matrix.h5")
 p3013 <- CreateSeuratObject(counts =p3013.data, project = "p3013", min.cells = 3, min.features = 200)
 p3013@meta.data$Chemistry <- "v3"
 p3013@meta.data$Patient <- "U3013MG" 
 p3013@meta.data$growth <- "PV" 
 p3013@meta.data$type <-"plastic"
   
-p3054.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3054_P_filtered_feature_bc_matrix.h5")
+p3054.data <-Read10X_h5("~3054_P_filtered_feature_bc_matrix.h5")
 p3054 <- CreateSeuratObject(counts =p3054.data, project = "p3054", min.cells = 3, min.features = 200)
 p3054@meta.data$Chemistry <- "v3"
 p3054@meta.data$Patient <- "U3054MG" 
 p3054@meta.data$growth <- "PV"
 p3054@meta.data$type <-"plastic"
-p3054_2.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3065_P_filtered_feature_bc_matrix.h5")
+p3054_2.data <-Read10X_h5("~3065_P_filtered_feature_bc_matrix.h5")
 p3054_2 <- CreateSeuratObject(counts =p3054_2.data, project = "p3054_2", min.cells = 3, min.features = 200)
 p3054_2@meta.data$Chemistry <- "v3"
 p3054_2@meta.data$Patient <- "U3054MG"
 p3054_2@meta.data$growth <- "PV" 
 p3054_2@meta.data$type <-"plastic"
 
-p3180.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3180_P_filtered_feature_bc_matrix.h5")
+p3180.data <-Read10X_h5("~3180_P_filtered_feature_bc_matrix.h5")
 p3180 <- CreateSeuratObject(counts =p3180.data, project = "p3180", min.cells = 3, min.features = 200)
 p3180@meta.data$Chemistry <- "v3" 
 p3180@meta.data$Patient <- "U3180MG" 
 p3180@meta.data$growth <- "WM" 
 p3180@meta.data$type <-"plastic"
 
-p3220.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3220_P_filtered_feature_bc_matrix.h5")
+p3220.data <-Read10X_h5("~3220_P_filtered_feature_bc_matrix.h5")
 p3220 <- CreateSeuratObject(counts =p3220.data, project = "p3220", min.cells = 3, min.features = 200)
 p3220@meta.data$Chemistry <- "v3" 
 p3220@meta.data$Patient <- "U3220MG" 
 p3220@meta.data$growth <- "M"
 p3220@meta.data$type <-"plastic"
 
-p3179.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3179_P_filtered_feature_bc_matrix.h5")
+p3179.data <-Read10X_h5("~3179_P_filtered_feature_bc_matrix.h5")
 p3179 <- CreateSeuratObject(counts =p3179.data, project = "p3179", min.cells = 3, min.features = 200)
 p3179@meta.data$Chemistry <- "v3"
 p3179@meta.data$Patient <- "U3179MG" 
@@ -174,7 +174,7 @@ p3179@meta.data$growth <- "WM"
 p3179@meta.data$type <-"plastic"
 
 
-p3031.data <-Read10X_h5("D:/Dropbox (UU)/SSF2_single_cell/comp/data/h5 files/3031_P_filtered_feature_bc_matrix.h5")
+p3031.data <-Read10X_h5("~3031_P_filtered_feature_bc_matrix.h5")
 p3031 <- CreateSeuratObject(counts =p3031.data, project = "p3031", min.cells = 3, min.features = 800)
 p3031@meta.data$Chemistry <- "v3"
 p3031@meta.data$Patient <- "U3031MG" 

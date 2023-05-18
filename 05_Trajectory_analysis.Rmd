@@ -16,7 +16,7 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r cars}
-setwd("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/")
+setwd("~/RPCA_integration_April_2023/")
 memory.limit(1048576)
 if (!requireNamespace("monocle3", quietly = TRUE)) {
   setRepositories(ind = 1:2)
@@ -45,7 +45,7 @@ options(future.globals.maxSize= 16000*1024^2)
 
 ```{r, fig.width=16}
 #load data
-integrated<-readRDS("D:/Dropbox (UU)/SSF2_single_cell/comp/Output/RPCA_integration_April_2023/brain_plastic_noCC_PRPCA3k_29042023_clustered_cell_typed.rds")
+integrated<-readRDS("~/RPCA_integration_April_2023/brain_plastic_noCC_PRPCA3k_29042023_clustered_cell_typed.rds")
 head(integrated)
 ```
 
